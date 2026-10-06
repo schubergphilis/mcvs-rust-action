@@ -1,0 +1,167 @@
+# yamllint disable rule:line-length
+# yamllint disable rule:quoted-strings
+---
+name: mcvs-rust-action
+description: |
+  The Mission Critical Vulnerability Scanner (MCVS) Rust action.
+inputs:
+  code-coverage-expected:
+    default: "80"
+    description: |
+      The minimum code coverage.
+  github-token-for-downloading-private-crates:
+    description: |
+      A token to download crates from private GitHub repositories.
+  grype-version:
+    description: The grype version to be used by the anchore/scan-action.
+  release-application-name:
+    description: |
+      The name of the binary, as defined in Cargo.toml, that has to be built
+      and released.
+  release-target:
+    default: x86_64-unknown-linux-gnu
+    description: |
+      The target triple of the release, e.g. x86_64-unknown-linux-gnu or
+      aarch64-apple-darwin.
+  task-install:
+    default: no
+    description: |
+      Whether Task should be installed.
+  task-version:
+    default: 3.54.0
+    description: |
+      The Task version that has to be installed and used.
+  testing-type:
+    description: |
+      The testing type, e.g. coverage, integration, lint, security-cargo,
+      security-grype or unit.
+  token:
+    description: |
+      A token that is used by Grype and to upload release assets.
+runs:
+  using: "composite"
+  steps:
+    #
+    # Install task and the rust toolchain that has been defined in the
+    # rust-toolchain.toml file, or stable if absent.
+    #
+    - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+      if: |
+        inputs.release-application-name != '' ||
+        inputs.task-install == 'yes' ||
+        inputs.testing-type == 'coverage' ||
+        inputs.testing-type == 'integration' ||
+        inputs.testing-type == 'lint' ||
+        inputs.testing-type == 'unit'
+      with:
+        components: ${{ inputs.testing-type == 'lint' && 'clippy,rustfmt' || inputs.testing-type == 'coverage' && 'llvm-tools-preview' || '' }}
+        target: ${{ inputs.release-application-name != '' && inputs.release-target || '' }}
+    - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+      if: |
+        inputs.task-install == 'yes' ||
+        inputs.testing-type == 'coverage' ||
+        inputs.testing-type == 'integration' ||
+        inputs.testing-type == 'lint' ||
+        inputs.testing-type == 'security-cargo' ||
+        inputs.testing-type == 'unit'
+      with:
+        version: ${{ inputs.task-version }}
+    - env:
+        GITHUB_TOKEN_PRIVATE_CRATES: ${{ inputs.github-token-for-downloading-private-crates }}
+      run: |
+        git config --global "url.https://${GITHUB_TOKEN_PRIVATE_CRATES}@github.com/.insteadOf" https://github.com/
+        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
+      shell: bash
+      if: ${{ inputs.github-token-for-downloading-private-crates != '' }}
+    #
+    # Scan Cargo.lock for vulnerable crates.
+    #
+    - name: osv-scanner
+      if: inputs.testing-type == 'security-cargo'
+      shell: bash
+      run: |
+        task remote:osv-scanner --yes
+    #
+    # Code security scanning.
+    #
+    # * Grype
+    #
+    - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+      if: inputs.token != '' && inputs.testing-type == 'security-grype'
+      with:
+        grype-version: ${{ inputs.grype-version }}
+        only-fixed: false
+        output-format: table
+        path: "."
+        severity-cutoff: high
+    #
+    # Run rustfmt and clippy.
+    #
+    - name: lint
+      if: inputs.testing-type == 'lint'
+      shell: bash
+      run: |
+        task remote:lint --yes
+    #
+    # Unit tests.
+    #
+    - name: unit tests
+      if: inputs.testing-type == 'unit'
+      shell: bash
+      run: |
+        task remote:test --yes
+    #
+    # Integration tests.
+    #
+    - name: integration tests
+      if: inputs.testing-type == 'integration'
+      shell: bash
+      run: |
+        task remote:test-integration --yes
+    #
+    # Coverage.
+    #
+    - name: code coverage
+      if: inputs.testing-type == 'coverage'
+      shell: bash
+      env:
+        CODE_COVERAGE_EXPECTED: ${{ inputs.code-coverage-expected }}
+      run: |
+        task remote:coverage --yes
+    #
+    # Build binary.
+    #
+    # ponytail: plain cargo build, cross-compiling to another arch/OS needs a
+    # runner of that kind or a cross linker; switch to cross/cargo-zigbuild if
+    # a single runner has to build every target.
+    #
+    - name: Build binary
+      if: inputs.release-application-name != ''
+      shell: bash
+      env:
+        RELEASE_APPLICATION_NAME: ${{ inputs.release-application-name }}
+        RELEASE_TARGET: ${{ inputs.release-target }}
+      run: |
+        cargo build \
+          --bin "${RELEASE_APPLICATION_NAME}" \
+          --locked \
+          --release \
+          --target "${RELEASE_TARGET}"
+    #
+    # Upload binaries to release
+    #
+    # Pinned by commit SHA, like every other action referenced here. An
+    # organisation action policy can require full-length SHA pins, and it is
+    # applied to every action a composite action references, transitively.
+    #
+    - name: Upload binaries to release
+      if: |
+        github.event_name == 'push' &&
+        contains(github.ref, 'refs/tags/') &&
+        inputs.release-application-name != ''
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
+      with:
+        repo_token: ${{ inputs.token }}
+        file: target/${{ inputs.release-target }}/release/${{ inputs.release-application-name }}
+        asset_name: ${{ inputs.release-application-name }}-${{ github.ref_name }}-${{ inputs.release-target }}
+        tag: ${{ github.ref }}

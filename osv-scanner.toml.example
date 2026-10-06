@@ -1,0 +1,11 @@
+# osv-scanner.toml.example
+#
+# Copy this file to osv-scanner.toml in your project root to ignore specific
+# vulnerabilities.
+#
+# Documentation: https://google.github.io/osv-scanner/configuration/
+
+# [[IgnoredVulns]]
+# id = "RUSTSEC-2024-0001"
+# ignoreUntil = 2026-11-06
+# reason = "Waiting for upstream fix: https://github.com/example/crate/issues/1"
