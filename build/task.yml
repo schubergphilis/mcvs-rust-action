@@ -1,0 +1,120 @@
+# task remote:lint
+# - cmd: steps that will be run sequentially.
+# - deps: tasks that will be run in parallel.
+#
+# yamllint disable rule:line-length
+# yamllint disable rule:quoted-strings
+---
+version: 3
+vars:
+  # Variables that have to be defined first as they are used in other variables.
+  OS_COMMAND_TYPE:
+    sh: uname -s | tr '[:upper:]' '[:lower:]'
+  OS_COMMAND_TYPE_ARCHITECTURE:
+    sh: uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'
+  # Variables that are sorted alphabetically and are used in the tasks.
+  BIN_DIR: '{{.CARGO_HOME | default (print .HOME "/.cargo")}}/bin'
+  CARGO_LLVM_COV_VERSION: v0.9.1
+  CODE_COVERAGE_STRICT: '{{.CODE_COVERAGE_STRICT | default "true"}}'
+  OSV_SCANNER_BIN: "{{.BIN_DIR}}/osv-scanner"
+  OSV_SCANNER_OUTPUT: /tmp/osv-scanner.txt
+  OSV_SCANNER_VERSION: v2.6.0
+tasks:
+  cargo-llvm-cov-install:
+    cmds:
+      - |
+        if ! cargo llvm-cov --version 2>/dev/null | grep -qw "{{trimPrefix "v" .CARGO_LLVM_COV_VERSION}}"; then
+          echo "Installing cargo-llvm-cov version {{.CARGO_LLVM_COV_VERSION}}..."
+          cargo install cargo-llvm-cov --locked --version {{trimPrefix "v" .CARGO_LLVM_COV_VERSION}}
+        fi
+    silent: true
+  coverage:
+    cmds:
+      - task: cargo-llvm-cov-install
+      - |
+        cargo llvm-cov --locked --workspace --all-features
+        code_coverage_actual=$(cargo llvm-cov report --json --summary-only | jq '.data[0].totals.lines.percent' | xargs printf "%.1f")
+        echo "CODE_COVERAGE_STRICT: {{.CODE_COVERAGE_STRICT}}"
+        if (( $(echo "${code_coverage_actual} < {{.CODE_COVERAGE_EXPECTED}}" | bc -l) )); then
+          echo "The actual code coverage: '${code_coverage_actual}' is too low. Expected: '{{.CODE_COVERAGE_EXPECTED}}'. Resolve the issue by writing more unit and/or integration tests."
+          exit 1
+        elif [ "{{.CODE_COVERAGE_STRICT}}" = "true" ] && (( $(echo "${code_coverage_actual} > {{.CODE_COVERAGE_EXPECTED}}" | bc -l) )); then
+          echo "The actual code coverage: '${code_coverage_actual}' exceeds the expected coverage. Please adjust the threshold that is defined in the .github/workflows/rust.yml workflow from '{{.CODE_COVERAGE_EXPECTED}}' to '${code_coverage_actual}'."
+          exit 1
+        fi
+    desc: check code coverage
+    silent: true
+    vars:
+      CODE_COVERAGE_EXPECTED:
+        sh: |
+          if [ -z "${CODE_COVERAGE_EXPECTED}" ]; then
+            yq '.jobs.mcvs-rust-action.steps[] | select(.uses | test(".*mcvs-rust-action.*")) | .with.code-coverage-expected' .github/workflows/rust.yml
+            exit 0
+          fi
+          echo ${CODE_COVERAGE_EXPECTED}
+  coverage-visual:
+    cmds:
+      - task: cargo-llvm-cov-install
+      - cargo llvm-cov --locked --workspace --all-features --open
+    desc: show code coverage
+    silent: true
+  format:
+    cmds:
+      - cargo fmt --all
+    desc: format rust files
+    silent: true
+  lint:
+    cmds:
+      - cargo fmt --all --check
+      - cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    desc: run rustfmt and clippy
+    silent: true
+  osv-scanner-install:
+    cmds:
+      - |
+        set -eo pipefail
+        if ! {{.OSV_SCANNER_BIN}} --version 2>/dev/null | grep -qw "{{trimPrefix "v" .OSV_SCANNER_VERSION}}"; then
+          echo "Installing osv-scanner version {{.OSV_SCANNER_VERSION}}..."
+          asset=osv-scanner_{{.OS_COMMAND_TYPE}}_{{.OS_COMMAND_TYPE_ARCHITECTURE}}
+          url=https://github.com/google/osv-scanner/releases/download/{{.OSV_SCANNER_VERSION}}
+          tmp_dir=$(mktemp -d)
+          curl -fsSL -o "${tmp_dir}/${asset}" "${url}/${asset}"
+          # verify the binary against the checksums published with the release
+          curl -fsSL "${url}/osv-scanner_SHA256SUMS" | grep " ${asset}$" | (cd "${tmp_dir}" && shasum -a 256 -c -)
+          mkdir -p {{.BIN_DIR}}
+          install -m 0755 "${tmp_dir}/${asset}" {{.OSV_SCANNER_BIN}}
+          rm -rf "${tmp_dir}"
+        fi
+    silent: true
+  osv-scanner:
+    cmds:
+      - task: osv-scanner-install
+      - |
+        echo "Running osv-scanner scan..."
+        if [ -f osv-scanner.toml ]; then
+          echo "Found osv-scanner.toml configuration file."
+          set -- --config osv-scanner.toml
+        else
+          echo "No osv-scanner.toml found. All vulnerabilities will cause failure."
+        fi
+        # exit code 1: vulnerabilities found, others: an error
+        if {{.OSV_SCANNER_BIN}} "$@" --lockfile Cargo.lock > {{.OSV_SCANNER_OUTPUT}} 2>&1; then
+          echo "No vulnerabilities found that are not in the ignore list."
+          exit 0
+        else
+          scan_exit_code=$?
+        fi
+        cat {{.OSV_SCANNER_OUTPUT}}
+        exit "${scan_exit_code}"
+    desc: check for vulnerabilities with osv-scanner
+    silent: true
+  test:
+    cmds:
+      - cargo test --locked --workspace --all-features --lib --bins
+    desc: run unit tests
+    silent: true
+  test-integration:
+    cmds:
+      - cargo test --locked --workspace --all-features --test '*'
+    desc: run integration tests, i.e. the tests in the tests directory
+    silent: true
