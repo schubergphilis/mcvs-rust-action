@@ -24,7 +24,7 @@ inputs:
       The target triple of the release, e.g. x86_64-unknown-linux-gnu or
       aarch64-apple-darwin.
   task-install:
-    default: no
+    default: "no"
     description: |
       Whether Task should be installed.
   task-version:
