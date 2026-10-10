@@ -24,8 +24,8 @@ jobs:
   mcvs-rust-action:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: schubergphilis/mcvs-rust-action@v0.1.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: schubergphilis/mcvs-rust-action@b809b5e71ff4135f6338dacbbe868c28351195e2 # v0.1.0
         with:
           testing-type: lint
 ```
