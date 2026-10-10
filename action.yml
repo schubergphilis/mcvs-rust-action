@@ -66,11 +66,13 @@ runs:
         inputs.testing-type == 'unit'
       with:
         version: ${{ inputs.task-version }}
-    - env:
-        GITHUB_TOKEN_PRIVATE_CRATES: ${{ inputs.github-token-for-downloading-private-crates }}
-      run: |
-        git config --global "url.https://${GITHUB_TOKEN_PRIVATE_CRATES}@github.com/.insteadOf" https://github.com/
-        echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
+    - name: Fetch private crates
+      env:
+        CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        GIT_CONFIG_COUNT: "1"
+        GIT_CONFIG_KEY_0: "url.https://${{ inputs.github-token-for-downloading-private-crates }}@github.com/.insteadOf"
+        GIT_CONFIG_VALUE_0: https://github.com/
+      run: cargo fetch --locked
       shell: bash
       if: ${{ inputs.github-token-for-downloading-private-crates != '' }}
     #
