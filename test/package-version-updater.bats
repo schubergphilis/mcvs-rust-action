@@ -72,6 +72,13 @@ JSON
   [ "${output}" = "null" ]
 }
 
+@test "latest_stable_package_version_on_github fails when gh fails" {
+  # pipefail, as in main: otherwise jq's exit status hides the failure
+  run bash -c "set -o pipefail; source '${BATS_TEST_DIRNAME}/../scripts/package-version-updater.sh'; gh() { return 1; }; latest_stable_package_version_on_github example/repo"
+
+  [ "${status}" -ne 0 ]
+}
+
 @test "latest_stable_package_versions exports found versions and skips failed lookups" {
   latest_stable_package_version_on_github() {
     case "$1" in
@@ -124,6 +131,16 @@ JSON
   [ "${PR_BODY}" = "Updated Task: 3.1.0 → 3.2.0"$'\n' ]
 }
 
+@test "update_task_version leaves action.yml and the PR body alone when up to date" {
+  latest_stable_package_version_on_github() { echo v3.1.0; }
+  PR_BODY=""
+
+  update_task_version
+
+  [ "$(yq -r '.inputs.task-version.default' action.yml)" = "3.1.0" ]
+  [ -z "${PR_BODY}" ]
+}
+
 @test "update_task_version keeps action.yml when no release is found" {
   latest_stable_package_version_on_github() { echo null; }
 
@@ -170,6 +187,7 @@ JSON
 
   commit_and_push_changes
 
+  grep -qx "git add ${BUILD_TASKFILE} action.yml" "${CALLS}"
   grep -qx "git push origin package-version-updater --force-with-lease" "${CALLS}"
 }
 

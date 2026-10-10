@@ -136,7 +136,7 @@ github_labels() {
 }
 
 commit_and_push_changes() {
-  git add .
+  git add "${BUILD_TASKFILE}" action.yml
   git config user.name "github-actions[bot]"
   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
   git commit -m "${PR_TITLE}"

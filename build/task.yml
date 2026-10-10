@@ -23,7 +23,7 @@ tasks:
   cargo-llvm-cov-install:
     cmds:
       - |
-        if ! cargo llvm-cov --version 2>/dev/null | grep -q "{{trimPrefix "v" .CARGO_LLVM_COV_VERSION}}"; then
+        if ! cargo llvm-cov --version 2>/dev/null | grep -qw "{{trimPrefix "v" .CARGO_LLVM_COV_VERSION}}"; then
           echo "Installing cargo-llvm-cov version {{.CARGO_LLVM_COV_VERSION}}..."
           cargo install cargo-llvm-cov --locked --version {{trimPrefix "v" .CARGO_LLVM_COV_VERSION}}
         fi
@@ -72,11 +72,18 @@ tasks:
   osv-scanner-install:
     cmds:
       - |
-        if ! {{.OSV_SCANNER_BIN}} --version 2>/dev/null | grep -q "{{trimPrefix "v" .OSV_SCANNER_VERSION}}"; then
+        set -eo pipefail
+        if ! {{.OSV_SCANNER_BIN}} --version 2>/dev/null | grep -qw "{{trimPrefix "v" .OSV_SCANNER_VERSION}}"; then
           echo "Installing osv-scanner version {{.OSV_SCANNER_VERSION}}..."
+          asset=osv-scanner_{{.OS_COMMAND_TYPE}}_{{.OS_COMMAND_TYPE_ARCHITECTURE}}
+          url=https://github.com/google/osv-scanner/releases/download/{{.OSV_SCANNER_VERSION}}
+          tmp_dir=$(mktemp -d)
+          curl -fsSL -o "${tmp_dir}/${asset}" "${url}/${asset}"
+          # verify the binary against the checksums published with the release
+          curl -fsSL "${url}/osv-scanner_SHA256SUMS" | grep " ${asset}$" | (cd "${tmp_dir}" && shasum -a 256 -c -)
           mkdir -p {{.BIN_DIR}}
-          curl -fsSL -o {{.OSV_SCANNER_BIN}} https://github.com/google/osv-scanner/releases/download/{{.OSV_SCANNER_VERSION}}/osv-scanner_{{.OS_COMMAND_TYPE}}_{{.OS_COMMAND_TYPE_ARCHITECTURE}}
-          chmod +x {{.OSV_SCANNER_BIN}}
+          install -m 0755 "${tmp_dir}/${asset}" {{.OSV_SCANNER_BIN}}
+          rm -rf "${tmp_dir}"
         fi
     silent: true
   osv-scanner:

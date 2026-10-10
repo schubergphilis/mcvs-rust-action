@@ -37,7 +37,7 @@ inputs:
       security-grype or unit.
   token:
     description: |
-      A token that is used by Grype and to upload release assets.
+      A token that is used to upload release assets.
 runs:
   using: "composite"
   steps:
@@ -87,7 +87,7 @@ runs:
     # * Grype
     #
     - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
-      if: inputs.token != '' && inputs.testing-type == 'security-grype'
+      if: inputs.testing-type == 'security-grype'
       with:
         grype-version: ${{ inputs.grype-version }}
         only-fixed: false
