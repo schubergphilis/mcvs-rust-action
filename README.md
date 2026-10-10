@@ -1,5 +1,7 @@
 # MCVS Rust Action
 
+<img src="./assets/logos/mcvs-rust-action.png" width="250">
+
 [![GitHub release](https://img.shields.io/github/v/release/schubergphilis/mcvs-rust-action)](https://github.com/schubergphilis/mcvs-rust-action/releases)
 [![License](https://img.shields.io/github/license/schubergphilis/mcvs-rust-action)](LICENSE)
 
