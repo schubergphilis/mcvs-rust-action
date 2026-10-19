@@ -18,7 +18,7 @@ vars:
   CODE_COVERAGE_STRICT: '{{.CODE_COVERAGE_STRICT | default "true"}}'
   OSV_SCANNER_BIN: "{{.BIN_DIR}}/osv-scanner"
   OSV_SCANNER_OUTPUT: /tmp/osv-scanner.txt
-  OSV_SCANNER_VERSION: v2.6.0
+  OSV_SCANNER_VERSION: v2.7.0
 tasks:
   cargo-llvm-cov-install:
     cmds:
